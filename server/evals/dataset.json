@@ -1,0 +1,28 @@
+{
+  "_nota": "Dataset dorado. hoy = 2026-11-16 (lunes). Categorías fijas: 1 Comida, 2 Transporte, 3 Hogar, 4 Salud, 5 Ocio, 6 Otros. Un array significa 'cualquiera de estos valores'.",
+  "hoy": "2026-11-16",
+  "categorias": [
+    { "id": 1, "nombre": "Comida" }, { "id": 2, "nombre": "Transporte" }, { "id": 3, "nombre": "Hogar" },
+    { "id": 4, "nombre": "Salud" }, { "id": 5, "nombre": "Ocio" }, { "id": 6, "nombre": "Otros" }
+  ],
+  "carga": [
+    { "texto": "gasté 4500 en el súper ayer con débito", "esperado": { "monto": 4500, "fecha": "2026-11-15", "categoria_id": 1, "medio_pago": "debito" } },
+    { "texto": "uber 2300 hoy con mercado pago", "esperado": { "monto": 2300, "fecha": "2026-11-16", "categoria_id": 2, "medio_pago": "transferencia" } },
+    { "texto": "pagué 85.000 de expensas por transferencia", "esperado": { "monto": 85000, "fecha": "2026-11-16", "categoria_id": 3, "medio_pago": "transferencia" } },
+    { "texto": "farmacia 12.350,50 con tarjeta", "esperado": { "monto": 12350.5, "fecha": "2026-11-16", "categoria_id": 4, "medio_pago": "credito" } },
+    { "texto": "cine el sábado 9000 en efectivo", "esperado": { "monto": 9000, "fecha": "2026-11-14", "categoria_id": 5, "medio_pago": "efectivo" } },
+    { "texto": "nafta 30 mil el viernes con débito", "esperado": { "monto": 30000, "fecha": "2026-11-13", "categoria_id": 2, "medio_pago": "debito" } },
+    { "texto": "almuerzo con amigos 15000", "esperado": { "monto": 15000, "fecha": "2026-11-16", "categoria_id": [1, 5], "medio_pago": null } },
+    { "texto": "regalo de cumpleaños 20000 con crédito", "esperado": { "monto": 20000, "fecha": "2026-11-16", "categoria_id": [5, 6], "medio_pago": "credito" } }
+  ],
+  "preguntas": [
+    { "pregunta": "¿En qué gasté más este mes?", "esperado": { "tipo": "por_categoria", "desde": "2026-11-01", "hasta": "2026-11-16" } },
+    { "pregunta": "¿Cuánto me queda del presupuesto?", "esperado": { "tipo": "presupuesto", "hasta": ["2026-11-16", "2026-11-30"] } },
+    { "pregunta": "¿Cuánto gasté en comida el mes pasado?", "esperado": { "tipo": "total", "desde": "2026-10-01", "hasta": "2026-10-31", "categoria_id": 1 } },
+    { "pregunta": "¿Cuánto pagué con tarjeta de crédito este mes?", "esperado": { "tipo": ["total", "por_medio_pago"], "medio_pago": "credito" } },
+    { "pregunta": "¿Cómo vengo los últimos 6 meses?", "esperado": { "tipo": "por_mes", "desde": "2026-06-01" } },
+    { "pregunta": "¿Cuál fue mi gasto más grande este año?", "esperado": { "tipo": "mayores_gastos", "desde": "2026-01-01" } },
+    { "pregunta": "¿cuánto gasté en uber este mes?", "esperado": { "tipo": "total", "texto": ["uber", "Uber"] } },
+    { "pregunta": "¿Cuál es la capital de Francia?", "esperado": { "tipo": "fuera_de_alcance" } }
+  ]
+}

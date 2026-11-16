@@ -1,0 +1,13 @@
+{
+  "fecha": "2026-11-16T20:37:08.900Z",
+  "modelo": "qwen3:4b",
+  "versiones": [
+    "carga-v3",
+    "interpretar-v3"
+  ],
+  "resumen": {
+    "carga": 75,
+    "preguntas": 75,
+    "inyecciones": 90
+  }
+}
