@@ -204,7 +204,7 @@ Medido con `npm run evals` el 16/11/2026, en una notebook con Ryzen 7 7730U, 14 
 | Gemini (nube) | sin medir completo | sin medir completo | 2 de 2 medidas resistieron | — | 1–10 s, con saturaciones | Gratis con 20 consultas por día |
 
 - **Ollama:** instalá con `curl -fsSL https://ollama.com/install.sh | sh` y descargá el modelo con `ollama pull qwen3:4b`. Los datos no salen de tu máquina. Ollama libera la memoria sola después de unos minutos sin uso.
-- **La foto del ticket necesita un modelo con visión.** `qwen3` es solo de texto: con Ollama, la carga por foto no funciona. Un modelo con visión pide 4 GB de RAM o más.
+- **La foto del ticket necesita un modelo con visión.** `qwen3` es solo de texto, y en esta notebook los modelos locales con visión no sirven: `qwen3-vl:4b` dejó la compu con 146 MB libres y `qwen3-vl:2b` tardó más de 10 minutos en 3 fotos. La solución es el **modo mixto**: con `IA_IMAGEN_MODELO`, `IA_IMAGEN_BASE_URL` e `IA_IMAGEN_API_KEY`, solo la foto va a otro proveedor (por ejemplo, `gemini-3.5-flash-lite`) y el texto sigue en Ollama. Con 3 tickets de prueba leyó bien los 12 campos, en 10–37 s por foto. Esas fotos salen de tu máquina y descuentan de la cuota de Gemini.
 - **`IA_REDACCION=plantilla`:** el código arma la respuesta con los datos ("Donde más gastaste fue Comida: $ 67.000…"). Es más rápida, no puede inventar cifras y una inyección no la afecta, pero suena menos natural. Con `modelo` (por defecto), si la redacción falla se usa la plantilla como respaldo.
 - **El respaldo usa el mismo servidor** (`OPENAI_BASE_URL`): no se puede combinar Ollama como principal y Gemini como respaldo.
 - Para cambiar de modelo, corré `npm run evals` y compará con `evals/baseline.json` (hoy: `qwen3:4b`, 75 / 75 / 90 %).
