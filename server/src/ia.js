@@ -12,24 +12,44 @@ export const MEDIOS_PAGO = ['efectivo', 'debito', 'credito', 'transferencia'];
 export const iaConfigurada = () =>
   Boolean(process.env.OPENAI_API_KEY || process.env.OPENAI_BASE_URL);
 
-const modelo = () => process.env.IA_MODELO || 'gpt-4.1-mini';
-// Plan B: si el modelo principal falla por algo transitorio, se prueba una vez con este.
-const modeloRespaldo = () => process.env.IA_MODELO_RESPALDO || null;
-// Opcional: cuánto "piensa" un modelo de razonamiento (Gemini, o-series): se envía como reasoning_effort.
-const razonamiento = () => process.env.IA_RAZONAMIENTO || undefined;
-
-let cliente;
-function obtenerCliente() {
-  cliente ??= new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY || 'local', // Ollama la ignora, pero el SDK la exige
-    baseURL: process.env.OPENAI_BASE_URL || undefined,
-    // Ninguna llamada sin timeout. Un modelo local necesita más margen: la primera llamada carga el modelo en memoria.
+// Dos proveedores posibles:
+// - principal: texto y preguntas (por ejemplo, Ollama local).
+// - imagen (opcional): solo la foto del ticket, para usar un modelo con visión en otro servidor
+//   (por ejemplo, Gemini) cuando el principal no lee imágenes. Sin IA_IMAGEN_MODELO, todo va al principal.
+const PROVEEDORES = {
+  principal: () => ({
+    apiKey: process.env.OPENAI_API_KEY,
+    baseURL: process.env.OPENAI_BASE_URL,
+    // Plan B: si el modelo principal falla por algo transitorio, se prueba una vez con el de respaldo.
+    modelos: [process.env.IA_MODELO || 'gpt-4.1-mini', process.env.IA_MODELO_RESPALDO].filter(Boolean),
+    // Opcional: cuánto "piensa" un modelo de razonamiento (Gemini, qwen3, o-series): va como reasoning_effort.
+    razonamiento: process.env.IA_RAZONAMIENTO || undefined,
     timeout: Number(process.env.IA_TIMEOUT_MS) || 30_000,
+  }),
+  imagen: () => ({
+    apiKey: process.env.IA_IMAGEN_API_KEY || process.env.OPENAI_API_KEY,
+    baseURL: process.env.IA_IMAGEN_BASE_URL,
+    modelos: [process.env.IA_IMAGEN_MODELO],
+    razonamiento: process.env.IA_IMAGEN_RAZONAMIENTO || undefined,
+    timeout: Number(process.env.IA_IMAGEN_TIMEOUT_MS) || 30_000,
+  }),
+};
+
+export const imagenConProveedorPropio = () => Boolean(process.env.IA_IMAGEN_MODELO);
+
+const clientes = {};
+function obtenerCliente(nombre) {
+  const p = PROVEEDORES[nombre]();
+  clientes[nombre] ??= new OpenAI({
+    apiKey: p.apiKey || 'local', // Ollama la ignora, pero el SDK la exige
+    baseURL: p.baseURL || undefined,
+    // Ninguna llamada sin timeout. Un modelo local necesita más margen: la primera llamada carga el modelo en memoria.
+    timeout: p.timeout,
     // El SDK reintenta 429 y 5xx con backoff exponencial. Con respaldo configurado no reintenta:
     // esperar al principal saturado cuesta decenas de segundos, mejor pasar directo al respaldo.
-    maxRetries: modeloRespaldo() ? 0 : 1,
+    maxRetries: p.modelos.length > 1 ? 0 : 1,
   });
-  return cliente;
+  return clientes[nombre];
 }
 
 // Código corto del error para la traza (nunca el mensaje, que puede traer datos).
@@ -67,15 +87,16 @@ function errorAmigable(err) {
   return new ApiError(503, 'El servicio de IA no respondió. Probá de nuevo en un rato');
 }
 
-async function llamarModelo(nombreModelo, { messages, maxTokens }) {
+async function llamarModelo(proveedor, nombreModelo, { messages, maxTokens }) {
   const inicio = Date.now();
-  const resp = await obtenerCliente().chat.completions.create({
+  const { razonamiento } = PROVEEDORES[proveedor]();
+  const resp = await obtenerCliente(proveedor).chat.completions.create({
     model: nombreModelo,
     messages,
     temperature: 0, // extraer datos: nada de creatividad
     max_completion_tokens: maxTokens, // tope de salida acorde a la tarea
     response_format: { type: 'json_object' },
-    ...(razonamiento() && { reasoning_effort: razonamiento() }),
+    ...(razonamiento && { reasoning_effort: razonamiento }),
   });
   const uso = resp.usage ?? {};
   return {
@@ -88,12 +109,12 @@ async function llamarModelo(nombreModelo, { messages, maxTokens }) {
 }
 
 // Modelo principal y, si falla por algo transitorio, el de respaldo. Cada intento fallido queda en la traza.
-async function llamarConRespaldo(ctx, pedido) {
-  const candidatos = [modelo(), modeloRespaldo()].filter(Boolean);
+async function llamarConRespaldo(ctx, pedido, proveedor) {
+  const candidatos = PROVEEDORES[proveedor]().modelos;
   for (let i = 0; i < candidatos.length; i++) {
     const inicio = Date.now();
     try {
-      return { ...(await llamarModelo(candidatos[i], pedido)), respaldo: i > 0 };
+      return { ...(await llamarModelo(proveedor, candidatos[i], pedido)), respaldo: i > 0 };
     } catch (err) {
       console.error(`[ia] error modelo=${candidatos[i]} ${err.status ?? ''} ${err.code ?? ''} ${err.message}`);
       await registrarLlamada({
@@ -110,8 +131,9 @@ async function llamarConRespaldo(ctx, pedido) {
 // Llamada genérica: pide JSON al modelo y lo valida.
 // ctx = { funcion, version, usuarioId } identifica la llamada en la traza.
 // Si la respuesta no es JSON (o no cumple `schema`), se reintenta una vez.
-export async function pedirJSON({ funcion, version, usuarioId, messages, maxTokens = 300, schema }) {
-  if (!iaConfigurada()) {
+// proveedor = 'principal' (por defecto) o 'imagen' (la foto del ticket, si IA_IMAGEN_MODELO está definido).
+export async function pedirJSON({ funcion, version, usuarioId, messages, maxTokens = 300, schema, proveedor = 'principal' }) {
+  if (proveedor === 'principal' && !iaConfigurada()) {
     throw new ApiError(503, 'La IA no está configurada. Definí OPENAI_API_KEY en server/.env');
   }
   const ctx = { funcion, version, usuarioId };
@@ -123,7 +145,7 @@ export async function pedirJSON({ funcion, version, usuarioId, messages, maxToke
   }
 
   for (let intento = 0; intento < 2; intento++) {
-    const r = await llamarConRespaldo(ctx, { messages, maxTokens });
+    const r = await llamarConRespaldo(ctx, { messages, maxTokens }, proveedor);
     const valor = parsearJson(r.texto);
     const validado = valor && schema ? schema.safeParse(valor) : { success: Boolean(valor), data: valor };
     const resultado = validado.success ? 'ok' : 'salida_invalida';
@@ -252,7 +274,9 @@ export async function interpretarGasto({ texto, imagen, categorias, hoy, usuario
     { role: 'user', content: contenido },
   ];
 
-  const crudo = await pedirJSON({ ...ctx, messages, maxTokens: 200 });
+  // Con foto y un proveedor de imagen configurado, el pedido va a ese modelo con visión; si no, al principal.
+  const proveedor = imagen && imagenConProveedorPropio() ? 'imagen' : 'principal';
+  const crudo = await pedirJSON({ ...ctx, messages, maxTokens: 200, proveedor });
   const salida = salidaSchema.parse(crudo);
   return {
     monto: salida.monto === null ? null : Math.round(salida.monto * 100) / 100,
